@@ -363,9 +363,12 @@ class World:
         for P in self.People:
             if not P.IsAlive:
                 continue
-            Friends = [self._PersonById(OId).Name
-                       for OId, Rel in P.Relationships.items()
-                       if Rel.RelationshipType in ("friend", "close_friend")]
+            Friends = []
+            for OId, Rel in P.Relationships.items():
+                if Rel.RelationshipType in ("friend", "close_friend"):
+                    Other = self._PersonById(OId)
+                    if Other is not None:
+                        Friends.append(Other.Name)
             print(f"  {P.Name}: {', '.join(Friends) if Friends else 'no close friends'}")
         print("  " + "─" * 40)
 
@@ -382,3 +385,10 @@ class World:
         Alive = sum(1 for P in self.People if P.IsAlive)
         return (f"World(year={self.CurrentYear}, people={len(self.People)}, "
                 f"alive={Alive}, jobs={len(self.Jobs)}, locations={len(self.Locations)})")
+
+    def __str__(self):
+        return f"World (Year {self.CurrentYear}): {sum(1 for P in self.People if P.IsAlive)} people alive, {len(self.Jobs)} jobs."
+
+    def generateReport(self) -> str:
+        """Generates and returns a proper string report of the world state."""
+        return self.Report.GetFullReportString()

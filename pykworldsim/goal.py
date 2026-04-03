@@ -28,3 +28,7 @@ class Goal:
     def __repr__(self):
         Status = "✓" if self.Achieved else f"{self.Progress:.0%}"
         return f"Goal({self.GoalType}, priority={self.Priority:.1f}, progress={Status})"
+
+    def __str__(self):
+        Status = "Achieved" if self.Achieved else f"{self.Progress:.0%} Complete"
+        return f"Goal: {self.GoalType} ({Status})"

@@ -22,3 +22,7 @@ class Event:
         World.Log.append(Msg)
         if self.Effect:
             self.Effect(World, Year)
+
+    def __str__(self):
+        Scope = "Global" if self.IsGlobal else "Local"
+        return f"Event: {self.Name} ({self.Probability*100:.1f}%) - {Scope}"

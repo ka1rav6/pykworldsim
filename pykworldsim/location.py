@@ -26,3 +26,6 @@ class Location:
 
     def __repr__(self):
         return f"Location({self.Name}, type={self.LocationType}, residents={len(self.Residents)})"
+
+    def __str__(self):
+        return f"{self.Name} ({self.LocationType.title()}) - Population: {len(self.Residents)}"

@@ -29,3 +29,6 @@ class Job:
     def __repr__(self):
         Status = f"held by {self.Holder.Name}" if self.Holder else "available"
         return f"Job({self.Role}, salary={self.Salary:,.0f}, {Status})"
+
+    def __str__(self):
+        return f"{self.Role} (${self.Salary:,.0f}/yr) - {'Available' if not self.Holder else f'Held by {self.Holder.Name}'}"

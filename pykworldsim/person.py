@@ -217,7 +217,8 @@ class Person:
 
     def _SeekJob(self, Year: int, World: Any):
         AvailableJobs = [J for J in World.Jobs if J.IsAvailable() and
-                         J.SkillRequired <= self.SkillLevel + 0.2]
+                         J.SkillRequired <= self.SkillLevel + 0.2 and 
+                         (J.Location is None or self.Location is None or J.Location == self.Location)]
         if not AvailableJobs:
             return
         # Pick best paying job within skill reach
@@ -266,7 +267,6 @@ class Person:
     def _InteractWith(self, Other: "Person", Context: str, Year: int, World: Any):
         # Get or create relationship
         if Other.Id not in self.Relationships:
-            from .relationship import Relationship
             Rel = Relationship(self, Other)
             Rel.YearMet = Year
             Rel.RecordEvent(Year, "met", f"{self.Name} met {Other.Name}")
@@ -299,7 +299,6 @@ class Person:
             self._HaveChild(Other, Year, World)
 
     def _HaveChild(self, Partner: "Person", Year: int, World: Any):
-        from .person import Person
         ChildName = f"Child_of_{self.Name}"
         # Inherit blended traits
         BlendedTraits = {}
@@ -461,3 +460,9 @@ class Person:
         Status = f"{'alive' if self.IsAlive else 'deceased'}, age={self.Age}"
         Job = self.Job.Role if self.Job else "unemployed"
         return f"Person({self.Name}, {Status}, job={Job}, happiness={self.LifeSatisfaction:.2f})"
+
+    def __str__(self):
+        Status = f"{'Alive' if self.IsAlive else 'Deceased'}, Age {self.Age}"
+        JobStr = f", Job: {self.Job.Role}" if self.Job else ", Unemployed"
+        PartnerStr = f", Partner: {self.RomanticPartner.Name}" if self.RomanticPartner else ""
+        return f"{self.Name} ({Status}{JobStr}{PartnerStr})"

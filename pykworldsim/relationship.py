@@ -9,6 +9,9 @@ class RelationshipEvent:
     EventType: str
     Description: str
 
+    def __str__(self):
+        return f"[Year {self.Year}] {self.EventType}: {self.Description}"
+
 
 class Relationship:
     """Tracks a directed relationship between two people."""
@@ -89,3 +92,6 @@ class Relationship:
     def __repr__(self):
         return (f"Relationship({self.PersonA.Name} ↔ {self.PersonB.Name}, "
                 f"type={self.RelationshipType}, strength={self.Strength:.2f})")
+
+    def __str__(self):
+        return f"Relationship: {self.PersonA.Name} & {self.PersonB.Name} ({self.RelationshipType.replace('_', ' ').title()})"

@@ -1,6 +1,6 @@
 [project]
 name = "pykworldsim"
-version = "0.1.0"
+version = "0.1.1"
 description = "A python library that simulates a world with people, relationships, and cities"
 authors = [
     {name = "Kairav Dutta", email = "kairavdutta@gmail.com"}

@@ -71,22 +71,31 @@ class Report:
             "TotalChildren": sum(len(P.Children) for P in Alive),
         }
 
-    def PrintSummary(self):
-        print("=" * 55)
-        print(f"  WORLD REPORT — Year {self.World.CurrentYear}")
-        print("=" * 55)
+    def GetFullReportString(self) -> str:
+        Lines = [
+            "=" * 55,
+            f"  WORLD REPORT — Year {self.World.CurrentYear}",
+            "=" * 55
+        ]
         Stats = self.PopulationStats()
         for K, V in Stats.items():
-            print(f"  {K:<28} {V}")
-        print(f"  {'AverageHappiness':<28} {self.AverageHappiness()}")
-        print(f"  {'AverageIncome':<28} ${self.AverageIncome():,.0f}")
-        print(f"  {'GiniCoefficient':<28} {self.GiniCoefficient()}")
-        print()
-        print("  Top 3 Happiest:")
+            Lines.append(f"  {K:<28} {V}")
+        Lines.append(f"  {'AverageHappiness':<28} {self.AverageHappiness()}")
+        Lines.append(f"  {'AverageIncome':<28} ${self.AverageIncome():,.0f}")
+        Lines.append(f"  {'GiniCoefficient':<28} {self.GiniCoefficient()}")
+        Lines.append("")
+        Lines.append("  Top 3 Happiest:")
         for P in self.TopHappiest(3):
-            print(f"    • {P['Name']} — satisfaction={P['LifeSatisfaction']}")
-        print()
-        print("  Most Connected:")
+            Lines.append(f"    • {P['Name']} — satisfaction={P['LifeSatisfaction']}")
+        Lines.append("")
+        Lines.append("  Most Connected:")
         for P in self.MostConnected(3):
-            print(f"    • {P['Name']} — friends={P['Friends']}")
-        print("=" * 55)
+            Lines.append(f"    • {P['Name']} — friends={P['Friends']}")
+        Lines.append("=" * 55)
+        return "\n".join(Lines)
+
+    def PrintSummary(self):
+        print(self.GetFullReportString())
+
+    def __str__(self):
+        return f"Report(WorldYear={self.World.CurrentYear}, Alive={len(self._AlivePeople())}, AvgHappiness={self.AverageHappiness()})"
