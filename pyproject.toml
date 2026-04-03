@@ -1,0 +1,14 @@
+[project]
+name = "PyKWorldSim"
+version = "0.1.0"
+description = "A python library that tries to simulate a world. With relationships, cities, people etc"
+authors = [
+    {name = "Kairav Dutta", email = "kairavdutta@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = []
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
