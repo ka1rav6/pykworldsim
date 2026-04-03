@@ -1,84 +1,117 @@
-# WorldSim
+# 🌍 PyKWorldSim
 
-A Python library for simulating people, relationships, societies, and time.
-All variables use PascalCase throughout.
+> A lightweight Python simulation engine for modeling **people, relationships, cities, and dynamic worlds**.
 
-## Installation
+PyKWorldSim provides a modular framework to simulate interactions between entities such as individuals, locations, jobs, and events — making it useful for experiments in **AI, social simulations, and system modeling**.
 
-```python
-# Place the worldsim/ folder in your project, then:
-from worldsim import World, Person, Goal
+---
+
+## 🚀 Features
+
+- 👤 **Person system** — create and manage individuals  
+- 🤝 **Relationships** — model connections between people  
+- 🏙️ **Locations & cities** — simulate environments  
+- 💼 **Jobs & roles** — assign occupations  
+- 🎯 **Goals** — define motivations and behaviors  
+- 📅 **Events** — simulate time-based interactions  
+- 📊 **Reports** — analyze simulation outcomes  
+
+---
+
+## 📦 Installation
+
+### From PyPI (after publishing)
+
+```bash
+pip install pykworldsim
 ```
 
-## Quick Start
+### For local development
 
-```python
-from worldsim import World
-
-World1 = World(Seed=42)
-
-# Add named people with specific traits
-Aarav = World1.CreatePerson("Aarav", Age=22, Traits={
-    "Ambition": 0.9, "Intelligence": 0.8
-})
-Riya = World1.CreatePerson("Riya", Age=24, Traits={
-    "SocialSkill": 0.9, "Extraversion": 0.85
-})
-
-# Fill with random people
-World1.Populate(20, AgeRange=(18, 35))
-
-# Run simulation
-World1.Simulate(Years=20)
-
-# Reports
-World1.Report.PrintSummary()
-World1.PlotHappiness()
-World1.PlotInequality()
-print(World1.GetPersonStory(Aarav))
+```bash
+pip install .
 ```
 
-## Traits (all PascalCase)
-Openness, Conscientiousness, Extraversion, Agreeableness, Neuroticism,
-Ambition, Intelligence, SocialSkill, Creativity, RiskTolerance, Discipline
+---
 
-## Goal Types
-GetJob, GetPromotion, MakeFriends, FindPartner, ImproveSkills,
-EarnMoney, IncreaseStatus, MoveCity, StartFamily, BuildBusiness,
-SocializeMore, FindPurpose
-
-## API Reference
+## 🧠 Basic Usage
 
 ```python
-# World
-World1 = World(Seed=42)
-World1.CreatePerson(Name, Age, Traits={})
-World1.CreateJob(Role, Salary, Prestige, StressLevel, SkillRequired, Industry)
-World1.CreateLocation(Name, LocationType, OpportunityLevel, CostOfLiving, PopulationDensity)
-World1.Populate(Count, AgeRange=(18, 35))
-World1.AddEvent(Name, Probability, Description, Effect, IsGlobal)
-World1.Simulate(Years=10, Verbose=True)
-World1.SetPolicy("universal_basic_income", Amount=15000)
-World1.SetPolicy("economic_boom")
-World1.SetPolicy("recession")
-World1.Interact(PersonA, PersonB, Context="party")
-World1.RunMonteCarlo(Years=10, Runs=20)
-World1.Save("world.pkl")
-World1.Load("world.pkl")
-World1.GetNarrative(LastN=30)
-World1.GetPersonStory(Person)
-World1.PlotHappiness()
-World1.PlotInequality()
-World1.SocialGraph()
+from pykworldsim.world import World
+from pykworldsim.person import Person
 
-# Report
-World1.Report.PrintSummary()
-World1.Report.TopHappiest(N=5)
-World1.Report.MostConnected(N=5)
-World1.Report.Wealthiest(N=5)
-World1.Report.Unemployed()
-World1.Report.AverageHappiness()
-World1.Report.AverageIncome()
-World1.Report.GiniCoefficient()
-World1.Report.PopulationStats()
+# Create world
+world = World()
+
+# Create people
+alice = Person(Name="Alice")
+bob = Person(Name="Bob")
+
+# Add people to the world
+world.addPerson(alice)
+world.addPerson(bob)
+
+# Run simulation step (example)
+world.Simulate()
+
+# Generate report
+report = world.generate_report()
+print(report)
 ```
+
+---
+
+## 📁 Project Structure
+
+```
+pykworldsim/
+│
+├── pykworldsim/
+│   ├── world.py
+│   ├── person.py
+│   ├── relationship.py
+│   ├── goal.py
+│   ├── event.py
+│   ├── job.py
+│   ├── location.py
+│   └── report.py
+│
+├── pyproject.toml
+├── README.md
+└── LICENSE
+```
+
+---
+
+## ⚙️ Requirements
+
+- Python 3.8+
+
+---
+
+
+## 📌 Use Cases
+
+- AI simulations  
+- Social behavior modeling  
+- Game prototyping  
+- Agent-based systems  
+- Experimental world-building  
+
+---
+
+## 📜 License
+
+This project is licensed under the MIT License.
+
+---
+
+## 👤 Author
+
+**Kairav Dutta**
+
+---
+
+## ⭐ Contributing
+
+Contributions, issues, and feature requests are welcome and appreciated!
