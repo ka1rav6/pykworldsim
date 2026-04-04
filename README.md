@@ -1,117 +1,267 @@
-# 🌍 PyKWorldSim
+# 🌍 pykworldsim
 
-> A lightweight Python simulation engine for modeling **people, relationships, cities, and dynamic worlds**.
+> A scalable, modular **Entity-Component-System (ECS)** world simulation framework.  
+> Simulate **people, relationships, cities, jobs, goals, and events** — or anything you design.
 
-PyKWorldSim provides a modular framework to simulate interactions between entities such as individuals, locations, jobs, and events — making it useful for experiments in **AI, social simulations, and system modeling**.
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-pytest-orange.svg)](tests/)
+[![Version](https://img.shields.io/badge/version-2.0.0-purple.svg)](pyproject.toml)
 
 ---
 
-## 🚀 Features
+## ✨ Features
 
-- 👤 **Person system** — create and manage individuals  
-- 🤝 **Relationships** — model connections between people  
-- 🏙️ **Locations & cities** — simulate environments  
-- 💼 **Jobs & roles** — assign occupations  
-- 🎯 **Goals** — define motivations and behaviors  
-- 📅 **Events** — simulate time-based interactions  
-- 📊 **Reports** — analyze simulation outcomes  
+| Feature | Description |
+|---|---|
+| ⚡ **Pure ECS** | Entities, components, and systems cleanly separated |
+| 👤 **Domain model** | Built-in Person, Location, Job, Goal, Relationship, Event components |
+| 🔁 **Deterministic** | Seed-based reproducibility across runs |
+| ⏯️ **Pausable loop** | Pause / resume the simulation mid-run |
+| 💾 **Save / Load** | Full JSON world state serialisation |
+| 🔌 **Plugin system** | Register custom systems dynamically by class or import path |
+| ⚙️ **YAML/JSON config** | Define entire worlds declaratively |
+| 📋 **Rich CLI** | `pykworldsim run config.yaml` with coloured output |
+| 🧪 **Fully tested** | 60+ pytest test cases covering all layers |
+| 📦 **pip-installable** | Standard `pyproject.toml`, PEP 561 typed |
 
 ---
 
 ## 📦 Installation
 
-### From PyPI (after publishing)
-
 ```bash
+# From PyPI
 pip install pykworldsim
-```
 
-### For local development
-
-```bash
-pip install .
+# From source (with dev extras)
+git clone https://github.com/ka1rav6/pykworldsim
+cd pykworldsim
+pip install -e ".[dev]"
 ```
 
 ---
 
-## 🧠 Basic Usage
+## 🚀 Quick Start
+
+### Physics simulation
 
 ```python
-from pykworldsim.world import World
-from pykworldsim.person import Person
+from pykworldsim import World, Simulation, Position, Velocity, MovementSystem
+from pykworldsim.core.systems.physics import PhysicsSystem
 
-# Create world
+world = World(name="demo")
+world.register_system(PhysicsSystem(gravity=9.81, bounds=(0, 0, 100, 100)))
+world.register_system(MovementSystem())
+
+e = world.create_entity()
+world.add_component(e, Position(x=10.0, y=0.0))
+world.add_component(e, Velocity(dx=2.0, dy=0.0))
+
+sim = Simulation(world, seed=42)
+sim.run(steps=100, dt=0.1)
+
+pos = world.get_component(e, Position)
+print(f"Final: ({pos.x:.2f}, {pos.y:.2f})")
+```
+
+### Social simulation
+
+```python
+from pykworldsim import (
+    World, Simulation,
+    Person, Job, Goal, Relationship,
+    SocialSystem, EventSystem,
+)
+from pykworldsim.core.components.event import Event
+
+world = World(name="society")
+world.register_system(SocialSystem())
+world.register_system(EventSystem())
+
+alice = world.create_entity()
+world.add_component(alice, Person(name="Alice", age=28.0, happiness=65.0))
+world.add_component(alice, Job(title="Engineer", salary=8000.0, satisfaction=75.0))
+world.add_component(alice, Goal(description="Get promoted", priority=9.0))
+
+# Schedule a birthday event at tick 5
+ev = world.create_entity()
+world.add_component(ev, Person(name="_holder"))
+world.add_component(ev, Event(name="Birthday", event_type="social", tick_scheduled=5))
+
+sim = Simulation(world, seed=2024)
+sim.run(steps=20, dt=1.0)
+
+person = world.get_component(alice, Person)
+print(f"Alice: age={person.age:.1f}, happiness={person.happiness:.1f}")
+```
+
+### Original repo API (backward compatible)
+
+```python
+from pykworldsim import World
+from pykworldsim import Person
+
+# Original-style usage still works
 world = World()
-
-# Create people
-alice = Person(Name="Alice")
-bob = Person(Name="Bob")
-
-# Add people to the world
-world.addPerson(alice)
-world.addPerson(bob)
-
-# Run simulation step (example)
-world.Simulate()
-
-# Generate report
+alice = world.create_entity()
+world.add_component(alice, Person(name="Alice"))
+world.Simulate()               # alias for world.update()
 report = world.generate_report()
 print(report)
 ```
 
 ---
 
-## 📁 Project Structure
+## 🖥️ CLI Usage
+
+```bash
+# Run a simulation from a YAML config
+pykworldsim run examples/config.yaml
+
+# Enable debug logging and save final state
+pykworldsim run examples/config.yaml --verbose --save output.json
+
+# Inspect a saved world
+pykworldsim inspect output.json
+
+# Print full JSON report
+pykworldsim run examples/config.yaml --report
+
+# Load a custom plugin system
+pykworldsim run config.yaml --plugin mypackage.systems.MySystem
+
+# List registered plugins
+pykworldsim plugins
+```
+
+---
+
+## ⚙️ YAML / JSON Config Format
+
+```yaml
+name: my-world
+log_level: INFO
+
+simulation:
+  steps: 100
+  dt: 0.1
+  seed: 42
+
+systems:
+  - type: MovementSystem
+  - type: SocialSystem
+    params:
+      age_rate: 0.05
+      energy_decay: 0.3
+
+entities:
+  - position: {x: 0.0, y: 0.0}
+    velocity:  {dx: 5.0, dy: 2.0}
+
+  - person: {name: Alice, age: 28.0, happiness: 65.0}
+    job:    {title: Engineer, salary: 8000.0, satisfaction: 75.0}
+    goal:   {description: "Get promoted", priority: 9.0}
+```
+
+---
+
+## 🔌 Plugin System
+
+Register a custom system at runtime — no subclassing of a framework class needed, just subclass `BaseSystem`:
+
+```python
+from pykworldsim.core.systems.base_system import BaseSystem
+from pykworldsim.core.components.position import Position
+from pykworldsim.plugins import PluginRegistry
+
+class BoundaryWrapSystem(BaseSystem):
+    def __init__(self, width=100.0, height=100.0):
+        super().__init__()
+        self.width = width
+        self.height = height
+
+    def update(self, dt: float) -> None:
+        for entity, (pos,) in self.world.get_components(Position):
+            pos.x %= self.width
+            pos.y %= self.height
+
+# Register by class
+PluginRegistry.register("BoundaryWrapSystem", BoundaryWrapSystem)
+
+# Or register by import path (useful for CLI --plugin flag)
+PluginRegistry.register_from_path("mypackage.systems.BoundaryWrapSystem")
+```
+
+---
+
+## 💾 Save & Load
+
+```python
+# Save world state
+world.save("checkpoint.json")
+
+# Restore world state
+from pykworldsim import World
+world = World.load("checkpoint.json")
+```
+
+---
+
+## 🏗️ Architecture
 
 ```
 pykworldsim/
-│
-├── pykworldsim/
-│   ├── world.py
-│   ├── person.py
-│   ├── relationship.py
-│   ├── goal.py
-│   ├── event.py
-│   ├── job.py
-│   ├── location.py
-│   └── report.py
-│
-├── pyproject.toml
-├── README.md
-└── LICENSE
+├── core/
+│   ├── entity.py          Thread-safe entity ID allocation
+│   ├── world.py           ECS container: entities + components + systems
+│   ├── simulation.py      Deterministic, pausable simulation loop
+│   ├── components/
+│   │   ├── position.py    2-D spatial coordinate
+│   │   ├── velocity.py    2-D velocity vector
+│   │   ├── person.py      Individual agent (age, health, happiness, energy)
+│   │   ├── location.py    Named place / city
+│   │   ├── relationship.py Directed bond between entities
+│   │   ├── job.py         Occupation / role
+│   │   ├── goal.py        Motivation / objective
+│   │   └── event.py       Scheduled time-based occurrence
+│   ├── systems/
+│   │   ├── base_system.py Abstract base class
+│   │   ├── movement.py    pos += vel × dt
+│   │   ├── physics.py     Gravity + boundary bouncing
+│   │   ├── social.py      Ageing, energy, happiness, goal progress
+│   │   └── event.py       Event scheduling and dispatch
+│   └── config/
+│       └── loader.py      YAML / JSON → World + Simulation
+├── plugins/
+│   └── registry.py        Dynamic system registration
+├── utils/
+│   └── logging.py         Logging configuration helper
+└── cli.py                 Typer CLI with Rich output
+```
+
+**ECS pattern:**
+
+| Concept | Role |
+|---|---|
+| **Entity** | Opaque integer ID — carries no data |
+| **Component** | Plain dataclass — data only, no logic |
+| **System** | Logic only — queries entities by component, mutates them |
+
+---
+
+## 🧪 Running Tests
+
+```bash
+pip install -e ".[dev]"
+
+pytest                                  # all tests
+pytest --cov=pykworldsim               # with coverage report
+pytest tests/test_simulation.py -v     # single module
+pytest -k "test_physics"               # filter by name
 ```
 
 ---
 
-## ⚙️ Requirements
+## 📄 License
 
-- Python 3.8+
-
----
-
-
-## 📌 Use Cases
-
-- AI simulations  
-- Social behavior modeling  
-- Game prototyping  
-- Agent-based systems  
-- Experimental world-building  
-
----
-
-## 📜 License
-
-This project is licensed under the MIT License.
-
----
-
-## 👤 Author
-
-**Kairav Dutta**
-
----
-
-## ⭐ Contributing
-
-Contributions, issues, and feature requests are welcome and appreciated!
+MIT © Kairav Dutta

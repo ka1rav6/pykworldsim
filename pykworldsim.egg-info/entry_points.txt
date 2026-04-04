@@ -1,0 +1,6 @@
+[console_scripts]
+pykworldsim = pykworldsim.cli:app
+
+[pykworldsim.systems]
+movement = pykworldsim.core.systems.movement:MovementSystem
+physics = pykworldsim.core.systems.physics:PhysicsSystem
