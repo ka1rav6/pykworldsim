@@ -261,6 +261,37 @@ pytest -k "test_physics"               # filter by name
 ```
 
 ---
+## Example usage
+```python
+from pykworldsim.core.world import World
+from pykworldsim.core.simulation import Simulation
+from pykworldsim.systems.physics import MovementSystem
+from pykworldsim.core.entity import Entity
+
+# Create world
+world = World(size=100)
+
+# Create entity
+player = Entity()
+player.add_component("position", {"x": 0, "y": 0})
+player.add_component("velocity", {"dx": 1, "dy": 1})
+
+world.add_entity(player)
+
+# Add system
+world.add_system(MovementSystem())
+
+# Run simulation
+sim = Simulation(world)
+
+for step in range(10):
+    sim.step(dt=1.0)
+
+# Output
+for entity in world.entities:
+    pos = entity.get_component("position")
+    print(pos)
+```
 
 ## 📄 License
 
