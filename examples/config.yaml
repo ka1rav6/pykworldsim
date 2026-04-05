@@ -1,8 +1,11 @@
-# pykworldsim world configuration
-# Run with: pykworldsim run examples/config.yaml
+# pykworldsim v3 config
+# pykworldsim run examples/config.yaml --steps 100 --seed 42
 
 name: yaml-demo
 log_level: INFO
+
+world:
+  size: 200.0
 
 simulation:
   steps: 50
@@ -11,19 +14,23 @@ simulation:
 
 systems:
   - type: MovementSystem
+  - type: SocialSystem
+    params:
+      age_rate: 0.05
+      energy_decay: 0.3
 
 entities:
-  - position: {x: 0.0,  y: 0.0}
-    velocity:  {dx: 5.0,  dy: 2.0}
+  - position: {x: 0.0, y: 0.0}
+    velocity:  {dx: 5.0, dy: 2.0}
 
   - position: {x: 10.0, y: 20.0}
     velocity:  {dx: -1.0, dy: 3.0}
+    count: 3
 
-  - position: {x: 50.0, y: 50.0}
-    velocity:  {dx: 0.0,  dy: -4.0}
-
-  - person:   {name: "Alice", age: 28.0, happiness: 65.0, energy: 90.0}
+  - person:   {name: Alice, age: 28.0, happiness: 65.0, energy: 90.0}
+    job:      {title: Engineer, salary: 8000.0, satisfaction: 75.0}
+    goal:     {description: "Get promoted", priority: 9.0}
     position: {x: 25.0, y: 25.0}
 
-  - person:   {name: "Bob",   age: 35.0, happiness: 50.0, energy: 70.0}
+  - person:   {name: Bob, age: 35.0, happiness: 50.0, energy: 70.0}
     position: {x: 75.0, y: 10.0}

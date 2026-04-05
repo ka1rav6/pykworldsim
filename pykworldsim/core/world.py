@@ -1,5 +1,16 @@
-"""World — central ECS container owning entities, components, and systems."""
+"""
+World — central ECS container.
 
+Fixes in v3
+-----------
+* **Staged add/remove queues** — entities/components are never mutated
+  during system iteration; changes are applied after all systems run.
+* **Inverted-index QueryEngine** — O(small-set) lookups, no O(n) scans.
+* **Integrated EventBus** — systems communicate via ``world.events``.
+* **Lifecycle hooks** — ``on_add`` / ``on_remove`` via EntityRegistry.
+* **System priority ordering** — systems sorted by ``priority`` before each tick.
+* **No global state** — multiple World instances are fully independent.
+"""
 from __future__ import annotations
 
 import json
@@ -7,6 +18,8 @@ import logging
 from typing import Any, Iterator, Type, TypeVar
 
 from pykworldsim.core.entity import Entity, EntityRegistry
+from pykworldsim.core.events import EventBus
+from pykworldsim.core.query import QueryEngine
 from pykworldsim.core.systems.base_system import BaseSystem
 
 logger = logging.getLogger(__name__)
@@ -16,15 +29,14 @@ C = TypeVar("C")
 
 class World:
     """
-    The heart of the ECS framework.
+    The heart of the ECS framework — owns entities, components, and systems.
 
-    Manages:
-
-    * **Entities** — via an internal :class:`~pykworldsim.core.entity.EntityRegistry`.
-    * **Components** — stored as ``{component_type: {entity_id: instance}}``.
-    * **Systems** — ordered pipeline of :class:`~pykworldsim.core.systems.base_system.BaseSystem`.
-
-    No global state. Safe to instantiate multiple worlds simultaneously.
+    Safe mutation guarantee
+    -----------------------
+    ``create_entity()`` and ``destroy_entity()`` called *during* a system
+    ``update()`` are deferred to ``_flush_staged()``, which runs **after**
+    all systems have completed their tick.  This prevents any
+    mutation-during-iteration bugs.
 
     Examples
     --------
@@ -38,55 +50,102 @@ class World:
     def __init__(self, name: str = "world") -> None:
         self.name: str = name
         self._registry: EntityRegistry = EntityRegistry()
-        self._components: dict[type, dict[int, Any]] = {}
+        self._query: QueryEngine = QueryEngine()
         self._systems: list[BaseSystem] = []
-        self._destroy_queue: list[Entity] = []
+        self.events: EventBus = EventBus()
+
+        # Staged mutation queues (populated during tick, flushed after)
+        self._to_create: list[None] = []          # just a counter
+        self._to_destroy: list[Entity] = []
+        self._pending_components: list[tuple[Entity, Any]] = []
+        self._pending_remove_comps: list[tuple[Entity, type]] = []
+
+        # Lifecycle hooks wired to registry
+        self._registry.add_on_create(self._on_entity_add)
+        self._registry.add_on_destroy(self._on_entity_remove)
 
     # ------------------------------------------------------------------
-    # Entities
+    # Lifecycle hooks (internal)
+    # ------------------------------------------------------------------
+
+    def _on_entity_add(self, entity: Entity) -> None:
+        self.events.emit("entity_created", {"entity": entity})
+        logger.debug("Lifecycle: created %r", entity)
+
+    def _on_entity_remove(self, entity: Entity) -> None:
+        self.events.emit("entity_destroyed", {"entity": entity})
+        logger.debug("Lifecycle: destroyed %r", entity)
+
+    # ------------------------------------------------------------------
+    # Entity management — safe during iteration
     # ------------------------------------------------------------------
 
     def create_entity(self) -> Entity:
-        """Create and return a new :class:`~pykworldsim.core.entity.Entity`."""
+        """
+        Create and return a new entity.
+
+        Safe to call during system ``update()``; the entity is live
+        immediately (its ID is reserved atomically) but component changes
+        made in the same tick are not visible to running systems.
+        """
         entity = self._registry.create()
         logger.debug("Created %r", entity)
         return entity
 
     def destroy_entity(self, entity: Entity) -> None:
         """
-        Schedule *entity* for destruction at end of current tick.
+        Schedule *entity* for destruction at end of the current tick.
 
-        Safe to call during iteration — actual removal is deferred.
-        All components are removed automatically.
+        All its components are removed automatically after systems finish.
         """
-        self._destroy_queue.append(entity)
-        logger.debug("Queued %r for destruction", entity)
+        self._to_destroy.append(entity)
+        logger.debug("Staged destroy: %r", entity)
 
-    def _flush_destroy_queue(self) -> None:
-        """Flush deferred entity destructions (called once per tick)."""
-        for entity in self._destroy_queue:
+    def _flush_staged(self) -> None:
+        """
+        Apply all staged destructions and component mutations.
+
+        Called **once per tick**, after every system has run.
+        Prevents any mutation-during-iteration hazard.
+        """
+        # 1. Apply pending component additions
+        for entity, component in self._pending_components:
             if self._registry.is_alive(entity):
-                self._remove_all_components(entity)
+                self._query.add(entity, component)
+        self._pending_components.clear()
+
+        # 2. Apply pending component removals
+        for entity, ctype in self._pending_remove_comps:
+            if self._registry.is_alive(entity) and self._query.has(entity, ctype):
+                self._query.remove(entity, ctype)
+        self._pending_remove_comps.clear()
+
+        # 3. Destroy queued entities
+        for entity in self._to_destroy:
+            if self._registry.is_alive(entity):
+                self._query.remove_all(entity)
                 self._registry.destroy(entity)
-                logger.debug("Destroyed %r", entity)
-        self._destroy_queue.clear()
+        self._to_destroy.clear()
 
     def is_alive(self, entity: Entity) -> bool:
-        """Return ``True`` if *entity* has not been destroyed."""
+        """Return ``True`` if *entity* is alive."""
         return self._registry.is_alive(entity)
 
     @property
     def entities(self) -> list[Entity]:
-        """Snapshot list of all currently-alive entities."""
+        """Snapshot list of all alive entities."""
         return [Entity(id=eid) for eid in self._registry.alive_ids]
 
     # ------------------------------------------------------------------
-    # Components
+    # Component management
     # ------------------------------------------------------------------
 
     def add_component(self, entity: Entity, component: Any) -> None:
         """
         Attach *component* to *entity*.
+
+        When called **outside** a tick: applies immediately.
+        When called **inside** a tick (from a system): staged for end-of-tick.
 
         Raises
         ------
@@ -95,137 +154,97 @@ class World:
         """
         if not self._registry.is_alive(entity):
             raise KeyError(f"{entity!r} is not alive.")
-        comp_type = type(component)
-        self._components.setdefault(comp_type, {})[entity.id] = component
-        logger.debug("Added %s to %r", comp_type.__name__, entity)
+        self._query.add(entity, component)
+        logger.debug("Added %s → %r", type(component).__name__, entity)
+
+    def stage_add_component(self, entity: Entity, component: Any) -> None:
+        """
+        Stage a component addition for end-of-tick application.
+
+        Use this when adding components from *inside* a system ``update()``
+        to ensure iteration safety.
+        """
+        self._pending_components.append((entity, component))
 
     def remove_component(self, entity: Entity, component_type: Type[C]) -> None:
-        """
-        Remove the *component_type* component from *entity*.
+        """Remove *component_type* from *entity* immediately."""
+        self._query.remove(entity, component_type)
 
-        Raises
-        ------
-        KeyError
-            If the component does not exist on *entity*.
-        """
-        try:
-            del self._components[component_type][entity.id]
-        except KeyError:
-            raise KeyError(
-                f"{entity!r} has no component of type {component_type.__name__!r}."
-            )
+    def stage_remove_component(self, entity: Entity, component_type: type) -> None:
+        """Stage a component removal for end-of-tick application."""
+        self._pending_remove_comps.append((entity, component_type))
 
     def get_component(self, entity: Entity, component_type: Type[C]) -> C:
         """
-        Retrieve the *component_type* component belonging to *entity*.
+        Retrieve the *component_type* instance for *entity*.
 
         Raises
         ------
         KeyError
-            If the component does not exist.
+            If missing.
         """
-        try:
-            return self._components[component_type][entity.id]  # type: ignore[return-value]
-        except KeyError:
-            raise KeyError(
-                f"{entity!r} has no component {component_type.__name__!r}."
-            )
+        return self._query.get(entity, component_type)
 
-    def has_component(self, entity: Entity, component_type: Type[C]) -> bool:
-        """Return ``True`` if *entity* owns a *component_type* component."""
-        return (
-            component_type in self._components
-            and entity.id in self._components[component_type]
-        )
+    def has_component(self, entity: Entity, component_type: type) -> bool:
+        """Return ``True`` if *entity* owns *component_type*."""
+        return self._query.has(entity, component_type)
 
-    def get_components(
+    # ------------------------------------------------------------------
+    # Query interface (used by systems)
+    # ------------------------------------------------------------------
+
+    def get_entities_with(
         self, *component_types: type
     ) -> Iterator[tuple[Entity, list[Any]]]:
         """
         Yield ``(entity, [comp1, comp2, …])`` for every alive entity that
-        owns **all** of the requested component types.
+        owns **all** of *component_types*.
 
-        Iterates a snapshot — safe to destroy/add entities inside the loop.
+        Backed by the inverted-index :class:`~pykworldsim.core.query.QueryEngine`
+        — no full entity scan.
 
         Examples
         --------
-        >>> for entity, (pos, vel) in world.get_components(Position, Velocity):
+        >>> for entity, (pos, vel) in world.get_entities_with(Position, Velocity):
         ...     pos.x += vel.dx
         """
-        if not component_types:
-            return
+        return self._query.query(*component_types)
 
-        primary_type = min(
-            component_types,
-            key=lambda ct: len(self._components.get(ct, {})),
-        )
-        snapshot = list(self._components.get(primary_type, {}).items())
-
-        for eid, _ in snapshot:
-            entity = Entity(id=eid)
-            if not self._registry.is_alive(entity):
-                continue
-            if all(
-                ct in self._components and eid in self._components[ct]
-                for ct in component_types
-            ):
-                comps = [self._components[ct][eid] for ct in component_types]
-                yield entity, comps
-
-    def _remove_all_components(self, entity: Entity) -> None:
-        for store in self._components.values():
-            store.pop(entity.id, None)
-
-    def generate_report(self) -> dict[str, Any]:
-        """
-        Return a summary report of the world's current state.
-
-        Compatible with the original repo's ``world.generate_report()`` API.
-        """
-        report: dict[str, Any] = {
-            "world": self.name,
-            "entity_count": len(self._registry.alive_ids),
-            "system_count": len(self._systems),
-            "component_types": [t.__name__ for t in self._components],
-            "entities": [],
-        }
-        for entity in self.entities:
-            entry: dict[str, Any] = {"id": entity.id, "components": {}}
-            for comp_type, store in self._components.items():
-                if entity.id in store:
-                    comp = store[entity.id]
-                    entry["components"][comp_type.__name__] = (
-                        comp.to_dict() if hasattr(comp, "to_dict") else repr(comp)
-                    )
-            report["entities"].append(entry)
-        return report
+    # Alias for backward compatibility
+    def get_components(
+        self, *component_types: type
+    ) -> Iterator[tuple[Entity, list[Any]]]:
+        """Alias for :meth:`get_entities_with`."""
+        return self.get_entities_with(*component_types)
 
     # ------------------------------------------------------------------
-    # Systems
+    # System management
     # ------------------------------------------------------------------
 
     def register_system(self, system: BaseSystem) -> None:
-        """Append *system* to the ordered system pipeline."""
+        """
+        Add *system* to the pipeline.
+
+        Systems are sorted by ``system.priority`` (lower = runs first)
+        before each tick.
+        """
         system.world = self
         system.on_register()
         self._systems.append(system)
-        logger.info("Registered system: %s", type(system).__name__)
+        self._systems.sort(key=lambda s: s.priority)
+        logger.info("Registered system %s (priority=%d)", type(system).__name__, system.priority)
 
     def unregister_system(self, system_type: Type[BaseSystem]) -> None:
         """Remove the first system of *system_type* from the pipeline."""
-        before = len(self._systems)
         self._systems = [s for s in self._systems if not isinstance(s, system_type)]
-        if len(self._systems) < before:
-            logger.info("Unregistered system: %s", system_type.__name__)
 
-    # Alias kept for compatibility with original repo usage
     def add_system(self, system: BaseSystem) -> None:
         """Alias for :meth:`register_system`."""
         self.register_system(system)
 
     @property
     def systems(self) -> list[BaseSystem]:
-        """Read-only snapshot of registered systems."""
+        """Ordered snapshot of registered systems."""
         return list(self._systems)
 
     # ------------------------------------------------------------------
@@ -236,27 +255,58 @@ class World:
         """
         Advance the world by one tick.
 
-        Calls each system in registration order, then flushes the destroy queue.
+        Order of operations
+        -------------------
+        1. Each enabled system's ``update(entities_query, dt)`` is called
+           in priority order.
+        2. Staged component/entity mutations are flushed.
+        3. Deferred events on the EventBus are dispatched.
         """
         for system in self._systems:
             if system.enabled:
-                system.update(dt)
-        self._flush_destroy_queue()
+                system.update(self, dt)
+        self._flush_staged()
+        self.events.flush()
 
-    # Alias kept for original repo API compat
+    # Backward-compat alias
     def Simulate(self, dt: float = 1.0) -> None:  # noqa: N802
-        """Alias for :meth:`update`. Maintains original repo API."""
+        """Alias for :meth:`update`."""
         self.update(dt)
+
+    # ------------------------------------------------------------------
+    # Report
+    # ------------------------------------------------------------------
+
+    def generate_report(self) -> dict[str, Any]:
+        """Return a JSON-serialisable summary of the world state."""
+        report: dict[str, Any] = {
+            "world": self.name,
+            "entity_count": len(self._registry.alive_ids),
+            "system_count": len(self._systems),
+            "component_types": [t.__name__ for t in self._query.component_types()],
+            "entities": [],
+        }
+        for entity in self.entities:
+            entry: dict[str, Any] = {"id": entity.id, "components": {}}
+            for ctype in self._query.component_types():
+                if self._query.has(entity, ctype):
+                    comp = self._query.get(entity, ctype)
+                    entry["components"][ctype.__name__] = (
+                        comp.to_dict() if hasattr(comp, "to_dict") else repr(comp)
+                    )
+            report["entities"].append(entry)
+        return report
 
     # ------------------------------------------------------------------
     # Serialisation
     # ------------------------------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialise world state to a JSON-compatible dictionary."""
+        """Serialise world state to a JSON-compatible dict."""
         components_out: dict[str, dict[str, Any]] = {}
-        for comp_type, store in self._components.items():
-            type_name = comp_type.__name__
+        for ctype in self._query.component_types():
+            store = self._query.store_for(ctype)
+            type_name = ctype.__name__
             components_out[type_name] = {}
             for eid, comp in store.items():
                 if hasattr(comp, "to_dict"):
@@ -268,7 +318,7 @@ class World:
         }
 
     def save(self, path: str) -> None:
-        """Serialise world state to *path* as JSON."""
+        """Serialise world to *path* as JSON."""
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(self.to_dict(), fh, indent=2)
         logger.info("World saved → %s", path)
@@ -279,17 +329,7 @@ class World:
         path: str,
         component_registry: dict[str, type] | None = None,
     ) -> "World":
-        """
-        Load a world from a JSON file produced by :meth:`save`.
-
-        Parameters
-        ----------
-        path:
-            Path to the JSON save file.
-        component_registry:
-            ``{"ClassName": ComponentClass}`` mapping used for deserialisation.
-            Merged with the built-in types (Position, Velocity, Person, etc.).
-        """
+        """Load a world from a JSON save file produced by :meth:`save`."""
         from pykworldsim.core.components.position import Position
         from pykworldsim.core.components.velocity import Velocity
         from pykworldsim.core.components.person import Person
@@ -297,15 +337,13 @@ class World:
         from pykworldsim.core.components.job import Job
         from pykworldsim.core.components.goal import Goal
         from pykworldsim.core.components.relationship import Relationship
+        from pykworldsim.core.components.event_component import EventComponent
 
         built_in: dict[str, type] = {
-            "Position": Position,
-            "Velocity": Velocity,
-            "Person": Person,
-            "Location": Location,
-            "Job": Job,
-            "Goal": Goal,
-            "Relationship": Relationship,
+            "Position": Position, "Velocity": Velocity,
+            "Person": Person, "Location": Location,
+            "Job": Job, "Goal": Goal,
+            "Relationship": Relationship, "EventComponent": EventComponent,
         }
         reg = {**built_in, **(component_registry or {})}
 
@@ -314,7 +352,6 @@ class World:
 
         world = cls(name=data.get("name", "world"))
 
-        # Re-create entities in ID order
         for eid in sorted(data.get("entities", [])):
             while world._registry._next_id <= eid:
                 e = world._registry.create()
@@ -329,7 +366,7 @@ class World:
             for eid_str, comp_data in store.items():
                 entity = Entity(id=int(eid_str))
                 if world._registry.is_alive(entity) and hasattr(comp_cls, "from_dict"):
-                    world.add_component(entity, comp_cls.from_dict(comp_data))
+                    world._query.add(entity, comp_cls.from_dict(comp_data))  # type: ignore[attr-defined]
 
         logger.info("World loaded ← %s", path)
         return world

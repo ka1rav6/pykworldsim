@@ -1,29 +1,29 @@
-# 🌍 pykworldsim
+# 🌍 pykworldsim v3
 
-> A scalable, modular **Entity-Component-System (ECS)** world simulation framework.  
-> Simulate **people, relationships, cities, jobs, goals, and events** — or anything you design.
+> **Production-grade ECS world simulation framework.**  
+> Simulate people, cities, relationships, jobs, goals, and events with a clean, fast, fully-tested Entity-Component-System engine.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
+[![Version](https://img.shields.io/badge/version-3.0.0-purple.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-pytest-orange.svg)](tests/)
-[![Version](https://img.shields.io/badge/version-2.0.0-purple.svg)](pyproject.toml)
 
 ---
 
-## ✨ Features
+## ✨ What's new in v3
 
-| Feature | Description |
+| Feature | Detail |
 |---|---|
-| ⚡ **Pure ECS** | Entities, components, and systems cleanly separated |
-| 👤 **Domain model** | Built-in Person, Location, Job, Goal, Relationship, Event components |
-| 🔁 **Deterministic** | Seed-based reproducibility across runs |
-| ⏯️ **Pausable loop** | Pause / resume the simulation mid-run |
-| 💾 **Save / Load** | Full JSON world state serialisation |
-| 🔌 **Plugin system** | Register custom systems dynamically by class or import path |
-| ⚙️ **YAML/JSON config** | Define entire worlds declaratively |
-| 📋 **Rich CLI** | `pykworldsim run config.yaml` with coloured output |
-| 🧪 **Fully tested** | 60+ pytest test cases covering all layers |
-| 📦 **pip-installable** | Standard `pyproject.toml`, PEP 561 typed |
+| ⚡ **Inverted-index QueryEngine** | O(smallest-set) lookups — no full entity scans |
+| 🔒 **Staged mutation queues** | `stage_add_component` / `destroy_entity` safe during iteration |
+| 🎲 **Injected RNG** | `sim.rng = random.Random(seed)` — fully deterministic |
+| 📡 **EventBus** | `emit()` / `subscribe()` — systems talk via events, not direct calls |
+| 🔃 **System priority ordering** | `system.priority` — lower runs first, sorted automatically |
+| 🪝 **Lifecycle hooks** | `on_add` / `on_remove` via `EntityRegistry` + EventBus |
+| 📸 **Snapshot / Replay** | `sim.take_snapshot("label")` / `sim.restore_snapshot("label")` |
+| 🔌 **Plugin registry** | Register custom systems by class or dotted import path |
+| ⚙️ **Config: world.size + count** | `count: N` spawns N identical entities; `world.size` wired |
+| 🖥️ **CLI overrides** | `--steps --dt --seed --debug` override config file values |
 
 ---
 
@@ -33,7 +33,7 @@
 # From PyPI
 pip install pykworldsim
 
-# From source (with dev extras)
+# From source (dev extras)
 git clone https://github.com/ka1rav6/pykworldsim
 cd pykworldsim
 pip install -e ".[dev]"
@@ -43,7 +43,7 @@ pip install -e ".[dev]"
 
 ## 🚀 Quick Start
 
-### Physics simulation
+### Physics
 
 ```python
 from pykworldsim import World, Simulation, Position, Velocity, MovementSystem
@@ -59,75 +59,81 @@ world.add_component(e, Velocity(dx=2.0, dy=0.0))
 
 sim = Simulation(world, seed=42)
 sim.run(steps=100, dt=0.1)
-
-pos = world.get_component(e, Position)
-print(f"Final: ({pos.x:.2f}, {pos.y:.2f})")
+print(world.get_component(e, Position))
 ```
 
-### Social simulation
+### Social world
 
 ```python
-from pykworldsim import (
-    World, Simulation,
-    Person, Job, Goal, Relationship,
-    SocialSystem, EventSystem,
-)
-from pykworldsim.core.components.event import Event
+from pykworldsim import (World, Simulation, Person, Job, Goal,
+                          SocialSystem, EventSystem, EventComponent)
 
 world = World(name="society")
 world.register_system(SocialSystem())
 world.register_system(EventSystem())
+
+# React to goal completion via EventBus
+world.events.subscribe("goal_completed",
+    lambda d: print(f"Goal done: {d['description']}"))
 
 alice = world.create_entity()
 world.add_component(alice, Person(name="Alice", age=28.0, happiness=65.0))
 world.add_component(alice, Job(title="Engineer", salary=8000.0, satisfaction=75.0))
 world.add_component(alice, Goal(description="Get promoted", priority=9.0))
 
-# Schedule a birthday event at tick 5
-ev = world.create_entity()
-world.add_component(ev, Person(name="_holder"))
-world.add_component(ev, Event(name="Birthday", event_type="social", tick_scheduled=5))
-
 sim = Simulation(world, seed=2024)
 sim.run(steps=20, dt=1.0)
-
-person = world.get_component(alice, Person)
-print(f"Alice: age={person.age:.1f}, happiness={person.happiness:.1f}")
+p = world.get_component(alice, Person)
+print(f"Alice: age={p.age:.1f}, happiness={p.happiness:.1f}")
 ```
 
-### Original repo API (backward compatible)
+### Deterministic RNG
 
 ```python
-from pykworldsim import World
-from pykworldsim import Person
+sim = Simulation(world, seed=42)
+# All randomness in systems must use sim.rng (not global random)
+value = sim.rng.random()   # deterministic across runs
+```
 
-# Original-style usage still works
-world = World()
-alice = world.create_entity()
-world.add_component(alice, Person(name="Alice"))
-world.Simulate()               # alias for world.update()
-report = world.generate_report()
-print(report)
+### Snapshot / Replay
+
+```python
+sim.run(steps=50, dt=0.1)
+sim.take_snapshot("checkpoint")      # save state
+sim.run(steps=50, dt=0.1)           # advance further
+sim.restore_snapshot("checkpoint")  # roll back
+```
+
+### Staged mutations (safe during iteration)
+
+```python
+class SpawnSystem(BaseSystem):
+    def update(self, world, dt):
+        for entity, (pos,) in world.get_entities_with(Position):
+            if some_condition:
+                new_e = world.create_entity()
+                # Stage the component — applied after all systems finish
+                world.stage_add_component(new_e, Position(x=0.0, y=0.0))
 ```
 
 ---
 
-## 🖥️ CLI Usage
+## 🖥️ CLI
 
 ```bash
-# Run a simulation from a YAML config
+# Basic run
 pykworldsim run examples/config.yaml
 
-# Enable debug logging and save final state
-pykworldsim run examples/config.yaml --verbose --save output.json
+# Override config values
+pykworldsim run examples/config.yaml --steps 200 --dt 0.05 --seed 99 --debug
+
+# Save final state
+pykworldsim run examples/config.yaml --save output.json
 
 # Inspect a saved world
 pykworldsim inspect output.json
 
-# Print full JSON report
-pykworldsim run examples/config.yaml --report
-
-# Load a custom plugin system
+# Load a custom plugin
 pykworldsim run config.yaml --plugin mypackage.systems.MySystem
 
 # List registered plugins
@@ -136,11 +142,14 @@ pykworldsim plugins
 
 ---
 
-## ⚙️ YAML / JSON Config Format
+## ⚙️ YAML / JSON Config
 
 ```yaml
 name: my-world
 log_level: INFO
+
+world:
+  size: 200.0
 
 simulation:
   steps: 100
@@ -153,56 +162,78 @@ systems:
     params:
       age_rate: 0.05
       energy_decay: 0.3
+  - type: PhysicsSystem
+    params:
+      gravity: 9.81
+      bounds: [0, 0, 200, 200]
 
 entities:
+  # Single entity
   - position: {x: 0.0, y: 0.0}
     velocity:  {dx: 5.0, dy: 2.0}
 
-  - person: {name: Alice, age: 28.0, happiness: 65.0}
-    job:    {title: Engineer, salary: 8000.0, satisfaction: 75.0}
-    goal:   {description: "Get promoted", priority: 9.0}
+  # Spawn 10 identical entities
+  - position: {x: 50.0, y: 50.0}
+    velocity:  {dx: 1.0, dy: 0.0}
+    count: 10
+
+  # Person with job + goal
+  - person:   {name: Alice, age: 28.0, happiness: 65.0, energy: 90.0}
+    job:      {title: Engineer, salary: 8000.0, satisfaction: 75.0}
+    goal:     {description: "Get promoted", priority: 9.0}
+    position: {x: 25.0, y: 25.0}
+```
+
+---
+
+## 📡 EventBus
+
+Systems communicate via events, never direct calls:
+
+```python
+# Subscribe anywhere
+world.events.subscribe("goal_completed", lambda d: print(d))
+world.events.subscribe("entity_created", lambda d: log(d["entity"]))
+world.events.subscribe("entity_destroyed", lambda d: cleanup(d["entity"]))
+
+# Emit immediately
+world.events.emit("custom_event", {"key": "value"})
+
+# Emit deferred (safe inside system.update — dispatched after tick)
+world.events.emit_deferred("score_changed", {"delta": +10})
+
+# Built-in events
+# "entity_created"   → {"entity": Entity}
+# "entity_destroyed" → {"entity": Entity}
+# "goal_completed"   → {"entity": Entity, "description": str}
 ```
 
 ---
 
 ## 🔌 Plugin System
 
-Register a custom system at runtime — no subclassing of a framework class needed, just subclass `BaseSystem`:
-
 ```python
 from pykworldsim.core.systems.base_system import BaseSystem
-from pykworldsim.core.components.position import Position
 from pykworldsim.plugins import PluginRegistry
 
 class BoundaryWrapSystem(BaseSystem):
+    priority: int = 15   # runs after MovementSystem(10), before SocialSystem(20)
+
     def __init__(self, width=100.0, height=100.0):
         super().__init__()
         self.width = width
         self.height = height
 
-    def update(self, dt: float) -> None:
-        for entity, (pos,) in self.world.get_components(Position):
+    def update(self, world, dt):
+        for entity, (pos,) in world.get_entities_with(Position):
             pos.x %= self.width
             pos.y %= self.height
 
 # Register by class
 PluginRegistry.register("BoundaryWrapSystem", BoundaryWrapSystem)
 
-# Or register by import path (useful for CLI --plugin flag)
+# Register by dotted path (for CLI --plugin flag)
 PluginRegistry.register_from_path("mypackage.systems.BoundaryWrapSystem")
-```
-
----
-
-## 💾 Save & Load
-
-```python
-# Save world state
-world.save("checkpoint.json")
-
-# Restore world state
-from pykworldsim import World
-world = World.load("checkpoint.json")
 ```
 
 ---
@@ -212,87 +243,88 @@ world = World.load("checkpoint.json")
 ```
 pykworldsim/
 ├── core/
-│   ├── entity.py          Thread-safe entity ID allocation
-│   ├── world.py           ECS container: entities + components + systems
-│   ├── simulation.py      Deterministic, pausable simulation loop
+│   ├── entity.py          Thread-safe registry + lifecycle hooks (on_add/on_remove)
+│   ├── world.py           ECS container — staged queues, query engine, EventBus
+│   ├── simulation.py      Deterministic loop — injected RNG, snapshot/replay
+│   ├── query.py           Inverted-index QueryEngine — O(smallest-set) lookups
+│   ├── events.py          EventBus — emit/subscribe, immediate + deferred dispatch
 │   ├── components/
-│   │   ├── position.py    2-D spatial coordinate
-│   │   ├── velocity.py    2-D velocity vector
-│   │   ├── person.py      Individual agent (age, health, happiness, energy)
-│   │   ├── location.py    Named place / city
-│   │   ├── relationship.py Directed bond between entities
-│   │   ├── job.py         Occupation / role
-│   │   ├── goal.py        Motivation / objective
-│   │   └── event.py       Scheduled time-based occurrence
+│   │   ├── position.py       2-D coordinate
+│   │   ├── velocity.py       2-D velocity
+│   │   ├── person.py         Individual agent
+│   │   ├── location.py       Named place / city
+│   │   ├── relationship.py   Directed bond
+│   │   ├── job.py            Occupation
+│   │   ├── goal.py           Motivation / objective
+│   │   └── event_component.py  Scheduled occurrence
 │   ├── systems/
-│   │   ├── base_system.py Abstract base class
-│   │   ├── movement.py    pos += vel × dt
-│   │   ├── physics.py     Gravity + boundary bouncing
-│   │   ├── social.py      Ageing, energy, happiness, goal progress
-│   │   └── event.py       Event scheduling and dispatch
+│   │   ├── base_system.py    Abstract base — priority + update(world, dt) contract
+│   │   ├── movement.py       priority=10 — pos += vel × dt
+│   │   ├── physics.py        priority=5  — gravity + boundary bounce
+│   │   ├── social.py         priority=20 — ageing, energy, happiness, goals
+│   │   └── event_system.py   priority=1  — scheduled event dispatch
 │   └── config/
-│       └── loader.py      YAML / JSON → World + Simulation
+│       └── loader.py         YAML/JSON → World + Simulation
 ├── plugins/
-│   └── registry.py        Dynamic system registration
+│   └── registry.py           Dynamic system registration
 ├── utils/
-│   └── logging.py         Logging configuration helper
-└── cli.py                 Typer CLI with Rich output
+│   └── logging.py            Structured logging helper
+└── cli.py                    Typer CLI — run/inspect/plugins + all overrides
 ```
 
-**ECS pattern:**
+### ECS contract
 
-| Concept | Role |
-|---|---|
-| **Entity** | Opaque integer ID — carries no data |
-| **Component** | Plain dataclass — data only, no logic |
-| **System** | Logic only — queries entities by component, mutates them |
+| Concept | Role | Rule |
+|---|---|---|
+| **Entity** | Opaque integer ID | Carries no data |
+| **Component** | `@dataclass` — data only | No logic; implements `to_dict` / `from_dict` |
+| **System** | `update(world, dt)` | Uses `world.get_entities_with(...)` only — never touches world internals |
+| **World** | Container + staged queue | Applies mutations after all systems finish |
+| **EventBus** | Pub/sub messaging | Systems emit, never call each other directly |
+
+### System execution order (default priorities)
+
+```
+tick N:
+  EventSystem     priority=1   (fire scheduled events first)
+  PhysicsSystem   priority=5   (apply gravity/forces)
+  MovementSystem  priority=10  (integrate velocity → position)
+  SocialSystem    priority=20  (age, happiness, goals)
+  → _flush_staged()            (apply deferred adds/removes/destroys)
+  → events.flush()             (dispatch deferred EventBus messages)
+```
 
 ---
 
-## 🧪 Running Tests
+## 🧪 Tests
 
 ```bash
 pip install -e ".[dev]"
 
 pytest                                  # all tests
-pytest --cov=pykworldsim               # with coverage report
-pytest tests/test_simulation.py -v     # single module
-pytest -k "test_physics"               # filter by name
+pytest --cov=pykworldsim               # with coverage
+pytest tests/test_simulation.py -v     # single file
+pytest -k "test_determinism"           # filter by name
 ```
+
+Test modules:
+
+| File | Covers |
+|---|---|
+| `test_entity.py` | Entity creation, lifecycle hooks, thread safety |
+| `test_query.py` | QueryEngine — add/get/has/remove/query |
+| `test_events.py` | EventBus — emit/subscribe/deferred/flush |
+| `test_world.py` | World — staged queues, priority ordering, report |
+| `test_simulation.py` | Lifecycle, determinism, injected RNG, snapshot |
+| `test_systems.py` | All 4 systems + system contract |
+| `test_save_load.py` | Serialisation, ConfigLoader, edge cases |
+| `test_plugins.py` | PluginRegistry — register/unregister/path |
 
 ---
-## Example usage
-```python
-from pykworldsim.core.world import World
-from pykworldsim.core.simulation import Simulation
-from pykworldsim.systems.physics import MovementSystem
-from pykworldsim.core.entity import Entity
-
-# Create world
-world = World(size=100)
-
-# Create entity
-player = Entity()
-player.add_component("position", {"x": 0, "y": 0})
-player.add_component("velocity", {"dx": 1, "dy": 1})
-
-world.add_entity(player)
-
-# Add system
-world.add_system(MovementSystem())
-
-# Run simulation
-sim = Simulation(world)
-
-for step in range(10):
-    sim.step(dt=1.0)
-
-# Output
-for entity in world.entities:
-    pos = entity.get_component("position")
-    print(pos)
-```
 
 ## 📄 License
 
 MIT © Kairav Dutta
+
+# NOTE:
+I have majorly used AI to create this. The idea and the way of implementation is original.

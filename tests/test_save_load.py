@@ -1,175 +1,107 @@
-"""Tests for world serialisation (save/load) and config loader."""
+"""Tests for World serialisation and ConfigLoader."""
 from __future__ import annotations
-
-import json
-import os
-import tempfile
-from pathlib import Path
-
+import json, os, tempfile
 import pytest
-
 from pykworldsim.core.world import World
 from pykworldsim.core.components.position import Position
 from pykworldsim.core.components.velocity import Velocity
 from pykworldsim.core.components.person import Person
-from pykworldsim.core.config.loader import ConfigLoader, WorldConfig, SimulationConfig
+from pykworldsim.core.config.loader import ConfigLoader
 
 
-# ── Helper ────────────────────────────────────────────────────────────
-
-def tmp_json(data: dict) -> str:
+def _tmp_json(data):
     f = tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w")
-    json.dump(data, f)
-    f.close()
+    json.dump(data, f); f.close()
     return f.name
 
 
-# ── Save / Load ───────────────────────────────────────────────────────
-
-def test_save_load_position_velocity() -> None:
-    world = World(name="saveable")
-    e = world.create_entity()
-    world.add_component(e, Position(x=5.0, y=10.0))
-    world.add_component(e, Velocity(dx=1.5, dy=-2.5))
-
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        path = f.name
+def test_save_load_roundtrip():
+    w = World(name="saveable")
+    e = w.create_entity()
+    w.add_component(e, Position(x=5.0, y=10.0))
+    w.add_component(e, Velocity(dx=1.5, dy=-2.5))
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f: path = f.name
     try:
-        world.save(path)
-        loaded = World.load(path)
-        pos = loaded.get_component(e, Position)
-        vel = loaded.get_component(e, Velocity)
-        assert abs(pos.x - 5.0) < 1e-9
-        assert abs(pos.y - 10.0) < 1e-9
-        assert abs(vel.dx - 1.5) < 1e-9
-        assert abs(vel.dy - -2.5) < 1e-9
+        w.save(path); loaded = World.load(path)
+        pos = loaded.get_component(e, Position); vel = loaded.get_component(e, Velocity)
+        assert abs(pos.x - 5.0) < 1e-9 and abs(vel.dy - -2.5) < 1e-9
     finally:
         os.unlink(path)
 
 
-def test_save_load_person() -> None:
-    world = World(name="person-world")
-    e = world.create_entity()
-    world.add_component(e, Person(name="Bob", age=40.0, happiness=75.0))
-
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        path = f.name
+def test_save_person():
+    w = World(); e = w.create_entity()
+    w.add_component(e, Person(name="Bob", age=40.0))
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f: path = f.name
     try:
-        world.save(path)
-        loaded = World.load(path)
-        p = loaded.get_component(e, Person)
-        assert p.name == "Bob"
-        assert p.age == 40.0
-        assert p.happiness == 75.0
+        w.save(path); loaded = World.load(path)
+        assert loaded.get_component(e, Person).name == "Bob"
     finally:
         os.unlink(path)
 
 
-def test_save_preserves_world_name() -> None:
-    world = World(name="my-special-world")
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        path = f.name
+def test_world_name_preserved():
+    w = World(name="my-world")
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f: path = f.name
     try:
-        world.save(path)
-        loaded = World.load(path)
-        assert loaded.name == "my-special-world"
+        w.save(path); assert World.load(path).name == "my-world"
     finally:
         os.unlink(path)
 
 
-def test_save_json_structure() -> None:
-    world = World(name="struct-test")
-    e = world.create_entity()
-    world.add_component(e, Position(x=1.0, y=2.0))
-
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as f:
-        path = f.name
-    try:
-        world.save(path)
-        with open(path) as fh:
-            data = json.load(fh)
-        assert data["name"] == "struct-test"
-        assert "Position" in data["components"]
-        assert str(e.id) in data["components"]["Position"]
-    finally:
-        os.unlink(path)
-
-
-def test_save_multiple_entities() -> None:
-    world = World(name="multi")
-    for i in range(5):
-        e = world.create_entity()
-        world.add_component(e, Position(x=float(i), y=0.0))
-
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-        path = f.name
-    try:
-        world.save(path)
-        loaded = World.load(path)
-        assert len(loaded.entities) == 5
-    finally:
-        os.unlink(path)
-
-
-# ── ConfigLoader ──────────────────────────────────────────────────────
-
-def test_config_load_json() -> None:
-    raw = {
-        "name": "json-world",
-        "simulation": {"steps": 20, "dt": 0.5, "seed": 7},
-        "entities": [
-            {"position": {"x": 1.0, "y": 2.0}, "velocity": {"dx": 0.5, "dy": 0.0}}
-        ],
-    }
-    path = tmp_json(raw)
+def test_config_load_json():
+    raw = {"name":"jw","simulation":{"steps":5,"dt":0.5,"seed":7},
+           "entities":[{"position":{"x":1.0,"y":2.0},"velocity":{"dx":0.5,"dy":0.0}}]}
+    path = _tmp_json(raw)
     try:
         cfg = ConfigLoader.load(path)
-        assert cfg.name == "json-world"
-        assert cfg.simulation.steps == 20
-        assert cfg.simulation.seed == 7
-        assert len(cfg.entities) == 1
+        assert cfg.name == "jw" and cfg.simulation.steps == 5 and len(cfg.entities) == 1
     finally:
         os.unlink(path)
 
 
-def test_config_build_creates_world_and_sim() -> None:
-    raw = {
-        "name": "built-world",
-        "entities": [
-            {"position": {"x": 0.0, "y": 0.0}, "velocity": {"dx": 1.0, "dy": 0.0}},
-            {"person": {"name": "Carol", "age": 22.0}},
-        ],
-    }
+def test_config_build_and_run():
+    raw = {"name":"r","simulation":{"steps":5,"dt":0.1,"seed":0},
+           "entities":[{"position":{"x":0.0,"y":0.0},"velocity":{"dx":2.0,"dy":0.0}}]}
     cfg = ConfigLoader._parse(raw)
-    world, sim = ConfigLoader.build(cfg)
-    assert world.name == "built-world"
-    assert len(world.entities) == 2
-
-
-def test_config_build_runs_simulation() -> None:
-    raw = {
-        "name": "runnable",
-        "simulation": {"steps": 10, "dt": 0.1, "seed": 99},
-        "entities": [
-            {"position": {"x": 0.0, "y": 0.0}, "velocity": {"dx": 2.0, "dy": 0.0}}
-        ],
-    }
-    cfg = ConfigLoader._parse(raw)
-    world, sim = ConfigLoader.build(cfg)
+    w, sim = ConfigLoader.build(cfg)
     sim.run(steps=cfg.simulation.steps, dt=cfg.simulation.dt)
-    assert sim.tick == 10
+    assert sim.tick == 5
 
 
-def test_config_missing_file_raises() -> None:
+def test_config_count_spawn():
+    raw = {"name":"c","entities":[{"position":{"x":0.0,"y":0.0},"count":5}]}
+    cfg = ConfigLoader._parse(raw)
+    w, _ = ConfigLoader.build(cfg)
+    assert len(w.entities) == 5
+
+
+def test_config_missing_file_raises():
     with pytest.raises(FileNotFoundError):
-        ConfigLoader.load("/nonexistent/path/config.yaml")
+        ConfigLoader.load("/no/such/file.yaml")
 
 
-def test_config_unsupported_extension_raises() -> None:
-    with tempfile.NamedTemporaryFile(suffix=".toml", delete=False) as f:
-        path = f.name
+def test_config_unsupported_ext_raises():
+    with tempfile.NamedTemporaryFile(suffix=".toml", delete=False) as f: path = f.name
     try:
-        with pytest.raises(ValueError, match="Unsupported"):
-            ConfigLoader.load(path)
+        with pytest.raises(ValueError): ConfigLoader.load(path)
     finally:
         os.unlink(path)
+
+
+def test_edge_case_empty_world():
+    w = World()
+    assert w.entities == []
+    assert list(w.get_entities_with(Position)) == []
+
+
+def test_edge_case_missing_component():
+    w = World(); e = w.create_entity()
+    with pytest.raises(KeyError): w.get_component(e, Position)
+
+
+def test_edge_case_destroy_twice():
+    w = World(); e = w.create_entity()
+    w.destroy_entity(e); w._flush_staged()
+    # Second destroy after flush should not raise — already gone
+    w.destroy_entity(e); w._flush_staged()

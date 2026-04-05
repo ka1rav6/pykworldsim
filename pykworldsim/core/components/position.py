@@ -1,18 +1,11 @@
-"""Position component — 2-D spatial coordinate."""
+"""Position component."""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-
 @dataclass
 class Position:
-    """Mutable 2-D position in world-space.
-
-    Attributes
-    ----------
-    x: Horizontal coordinate.
-    y: Vertical coordinate.
-    """
+    """2-D position in world-space."""
     x: float = 0.0
     y: float = 0.0
 
@@ -20,8 +13,8 @@ class Position:
         return {"x": self.x, "y": self.y}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Position":
-        return cls(x=float(data["x"]), y=float(data["y"]))
+    def from_dict(cls, d: dict[str, Any]) -> "Position":
+        return cls(x=float(d["x"]), y=float(d["y"]))
 
     def __repr__(self) -> str:
         return f"Position(x={self.x:.4f}, y={self.y:.4f})"

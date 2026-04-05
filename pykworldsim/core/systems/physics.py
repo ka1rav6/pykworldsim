@@ -1,28 +1,18 @@
-"""PhysicsSystem — gravity and rectangular boundary bouncing."""
+"""PhysicsSystem — gravity + boundary bounce, priority=5."""
 from __future__ import annotations
-
 import logging
-
+from typing import TYPE_CHECKING
 from pykworldsim.core.systems.base_system import BaseSystem
 from pykworldsim.core.components.position import Position
 from pykworldsim.core.components.velocity import Velocity
+if TYPE_CHECKING:
+    from pykworldsim.core.world import World
 
 logger = logging.getLogger(__name__)
 
-
 class PhysicsSystem(BaseSystem):
-    """
-    Applies gravitational acceleration and optional world-boundary bouncing.
-
-    Parameters
-    ----------
-    gravity:     Downward acceleration (units/s²). Applied to ``dy`` each tick.
-    bounds:      ``(x_min, y_min, x_max, y_max)`` bounding rectangle.
-                 Pass ``None`` to disable boundary enforcement.
-    restitution: Coefficient of restitution (0 = inelastic, 1 = elastic).
-
-    Required components: Position, Velocity.
-    """
+    """Applies gravitational acceleration and optional rectangular boundary bouncing."""
+    priority: int = 5
 
     def __init__(
         self,
@@ -31,29 +21,20 @@ class PhysicsSystem(BaseSystem):
         restitution: float = 0.8,
     ) -> None:
         super().__init__()
-        self.gravity: float = gravity
+        self.gravity = gravity
         self.bounds = bounds
-        self.restitution: float = restitution
+        self.restitution = restitution
 
-    def update(self, dt: float) -> None:
-        for entity, (pos, vel) in self.world.get_components(Position, Velocity):
+    def update(self, world: "World", dt: float) -> None:
+        for entity, (pos, vel) in world.get_entities_with(Position, Velocity):
             vel.dy += self.gravity * dt
-
             if self.bounds is not None:
                 x_min, y_min, x_max, y_max = self.bounds
-
                 if pos.x < x_min:
-                    pos.x = x_min
-                    vel.dx = abs(vel.dx) * self.restitution
+                    pos.x = x_min; vel.dx = abs(vel.dx) * self.restitution
                 elif pos.x > x_max:
-                    pos.x = x_max
-                    vel.dx = -abs(vel.dx) * self.restitution
-
+                    pos.x = x_max; vel.dx = -abs(vel.dx) * self.restitution
                 if pos.y < y_min:
-                    pos.y = y_min
-                    vel.dy = abs(vel.dy) * self.restitution
+                    pos.y = y_min; vel.dy = abs(vel.dy) * self.restitution
                 elif pos.y > y_max:
-                    pos.y = y_max
-                    vel.dy = -abs(vel.dy) * self.restitution
-
-            logger.debug("%r → vel=(%.4f, %.4f)", entity, vel.dx, vel.dy)
+                    pos.y = y_max; vel.dy = -abs(vel.dy) * self.restitution

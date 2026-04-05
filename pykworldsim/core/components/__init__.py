@@ -6,10 +6,6 @@ from pykworldsim.core.components.location import Location
 from pykworldsim.core.components.relationship import Relationship
 from pykworldsim.core.components.job import Job
 from pykworldsim.core.components.goal import Goal
-from pykworldsim.core.components.event import Event
+from pykworldsim.core.components.event_component import EventComponent
 
-__all__ = [
-    "Position", "Velocity",
-    "Person", "Location", "Relationship",
-    "Job", "Goal", "Event",
-]
+__all__ = ["Position","Velocity","Person","Location","Relationship","Job","Goal","EventComponent"]
